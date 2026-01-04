@@ -21,10 +21,9 @@ import app.config as app_config
 from app.work_queue import connect_queue
 
 from app.libs.utils import nothrow_killpg
-
+from app.code_output_comparison import enhanced_output_comparison
 
 logger = logging.getLogger(__name__)
-
 
 def save_error_case(sub: Submission, result: ProcessExecuteResult | None = None, exception: Exception | None = None):
     if not app_config.ERROR_CASE_SAVE_PATH:
@@ -73,10 +72,24 @@ def judge(sub: Submission):
 
         success = result.success
         run_success = result.success
-        if sub.expected_output is not None:
-            success = success and result.stdout.strip() == sub.expected_output.strip()
+        comparison_error_msg = ""
+        
+        if sub.expected_output is not None and result.success:
+            # Use enhanced output comparison
+            output_match, error_msg = enhanced_output_comparison(
+                result.stdout if result.stdout is not None else "", 
+                sub.expected_output,
+                logger
+            )
+            success = success and output_match
+            comparison_error_msg = error_msg
+            
+            if not output_match:
+                logger.info(f"Output mismatch for submission {sub.sub_id}: {error_msg}")
+        
         if not success:
             save_error_case(sub, result)
+            
         sub_result = SubmissionResult(
             sub_id=sub.sub_id, success=success, cost=result.cost,
             run_success=run_success,
@@ -89,6 +102,17 @@ def judge(sub: Submission):
                 if result.exit_code == TIMEOUT_EXIT_CODE
                 else ResultReason.UNSPECIFIED
         )
+        
+        # Add comparison error message to stderr if there was an output mismatch
+        if comparison_error_msg and not success:
+            if sub_result.stderr:
+                sub_result.stderr = f"{sub_result.stderr}\n[Comparison Error]: {comparison_error_msg}"
+            else:
+                sub_result.stderr = f"[Comparison Error]: {comparison_error_msg}"
+            # Truncate if too long
+            if sub_result.stderr and len(sub_result.stderr) > app_config.MAX_STDOUT_ERROR_LENGTH:
+                sub_result.stderr = sub_result.stderr[:app_config.MAX_STDOUT_ERROR_LENGTH]
+                
     except Exception as e:
         logger.exception(f'Worker failed to judge submission {sub.sub_id}')
         save_error_case(sub, None, e)
