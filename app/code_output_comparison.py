@@ -58,7 +58,7 @@ def try_json_comparison(prediction: str, expected: str) -> tuple[bool, str]:
         return False, "Not valid JSON format"
 
 
-def enhanced_output_comparison(prediction: str, expected: str) -> tuple[bool, str]:
+def enhanced_output_comparison(prediction: str, expected: str, logger) -> tuple[bool, str]:
     """
     Enhanced output comparison using logic from testing_util_new.py
     Returns (is_match, error_message)
